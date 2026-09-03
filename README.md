@@ -1,15 +1,11 @@
 # Phishing Email Triage Bot
 
-A hybrid **rule-based + machine-learning** phishing detection and triage system for security
-operations teams. Ingests email from a live mailbox (IMAP), a watch-folder, or manual upload,
-scores each message using authentication checks, brand-impersonation heuristics, a trained text
-classifier, and threat-intel enrichment (VirusTotal, AbuseIPDB), then surfaces a prioritized
-verdict on an analyst dashboard.
-
-This mirrors the triage workflow used in real SOC phishing playbooks, automating the first-pass
-analysis an L1 analyst would otherwise do manually.
-
-![status](https://img.shields.io/badge/status-active-brightgreen) ![python](https://img.shields.io/badge/python-3.11%2B-blue)
+Designed to help **L1 SOC analysts** investigate suspicious emails quickly and consistently,
+Phishing Triage Bot automates the initial analysis and prioritization of potential phishing
+incidents. It ingests messages from live IMAP mailboxes or manual uploads, evaluates email
+authentication results, sender and brand-impersonation indicators, message content, and
+threat-intelligence data from VirusTotal and AbuseIPDB. The results are presented through an
+analyst dashboard with a prioritized risk verdict and supporting investigation details.
 
 ## Features
 
@@ -59,97 +55,158 @@ Heuristics   ML Model   Threat Intel Enrichment
 
 ```powershell
 python -m venv .venv
+# Phishing Triage Bot
+
+Phishing Triage Bot is a local security-operations tool that analyzes email messages and produces a prioritized phishing verdict. It combines deterministic email heuristics, a text-classification model, and optional threat-intelligence enrichment in a FastAPI application with a browser dashboard.
+
+## Features
+
+- Upload `.eml` files for analysis through the dashboard or API.
+- Fetch unread messages from an IMAP mailbox.
+- Parse authentication results, sender headers, URLs, and attachments.
+- Detect common phishing indicators such as urgency, suspicious links, reply-to mismatches, and brand impersonation.
+- Combine rule-based signals with a TF-IDF and Logistic Regression classifier.
+- Optionally enrich URLs and sender IPs through VirusTotal and AbuseIPDB.
+- Store investigation history and analyst status updates in SQLite.
+- Expose interactive API documentation through FastAPI.
+
+## Requirements
+
+- Python 3.11 or later
+- Optional: VirusTotal and AbuseIPDB API keys for threat-intelligence enrichment.
+- Optional: Gmail or another IMAP mailbox for mailbox ingestion.
+
+## Installation
+
+From the project directory, create and activate a virtual environment:
+
+```powershell
+python -m venv .venv
 .venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
 
-### 2. Configure environment
+On systems where PowerShell script execution is restricted, activate the environment with:
+
+```powershell
+.venv\Scripts\activate.bat
+```
+
+## Configuration
+
+Create a local environment file from the template:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-Edit `.env` and fill in whichever integrations you want to enable:
-- `IMAP_HOST` / `IMAP_USER` — required for Gmail mailbox ingestion.
-- `IMAP_PORT` / `IMAP_FOLDER` — optional, defaulting to `993` and `INBOX`.
-- `VIRUSTOTAL_API_KEY`, `ABUSEIPDB_API_KEY` — free-tier keys work; leave blank to skip enrichment.
+Edit `.env` and set only the integrations you need:
 
-### Gmail OAuth2 authorization
-
-1. In Google Cloud Console, enable the Gmail API and configure an OAuth consent screen.
-2. Create an OAuth client with application type **Desktop app**.
-3. Download the JSON file to the project root as `gmail_client_secret.json`.
-4. Add the Gmail account as a test user if the consent screen is in testing mode.
-5. Run the one-time authorization command:
-
-```powershell
-python -m app.gmail_oauth
+```dotenv
+VIRUSTOTAL_API_KEY=
+ABUSEIPDB_API_KEY=
+IMAP_HOST=imap.gmail.com
+IMAP_PORT=993
+IMAP_USER=your_mailbox@gmail.com
+IMAP_FOLDER=INBOX
 ```
 
-Complete consent in the browser. The generated `gmail_token.json` is refreshed automatically.
-Both OAuth files are ignored by Git and must never be committed.
+Threat-intelligence keys may be left empty to disable enrichment. IMAP ingestion requires `IMAP_HOST` and `IMAP_USER`.
 
-### 3. Train the ML model (starter dataset included)
+### Gmail OAuth2
+
+Gmail OAuth2 uses local files rather than client credentials in `.env`:
+
+1. Enable the Gmail API in Google Cloud Console.
+2. Configure an OAuth consent screen and add the mailbox as a test user when required.
+3. Create a Desktop application OAuth client.
+4. Download the client file to the project root as `gmail_client_secret.json`.
+5. Run the authorization flow:
+
+   ```powershell
+   python -m app.gmail_oauth
+   ```
+
+The command creates `gmail_token.json` after authorization. Both OAuth files are ignored by Git and must never be committed.
+
+## Run the application
+
+Start the development server:
+
+```powershell
+uvicorn app.main:app --reload --port 8010
+```
+
+Open the dashboard at [http://127.0.0.1:8010](http://127.0.0.1:8010). FastAPI's interactive API documentation is available at [http://127.0.0.1:8010/docs](http://127.0.0.1:8010/docs).
+
+The SQLite history database is created as `triage_history.db` when the application starts.
+
+## API endpoints
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `GET` | `/health` | Check application health |
+| `POST` | `/upload-eml` | Analyze an uploaded `.eml` file |
+| `POST` | `/imap/fetch` | Fetch and analyze unread IMAP messages |
+| `GET` | `/history` | List stored investigations |
+| `GET` | `/history/{case_id}` | View one investigation |
+| `PATCH` | `/history/{case_id}/status` | Update an investigation status |
+
+## Train the classifier
+
+The repository includes a small starter dataset and a generated model artifact. Retrain the model with:
 
 ```powershell
 python ml/train.py
 ```
 
-This trains on `ml/dataset/sample_emails.csv` and writes `ml/model.joblib`. For production-grade
-accuracy, retrain on a larger corpus (e.g. the Nazario phishing corpus + SpamAssassin/Enron ham,
-or your own organization's reported-phishing mailbox export) — just point `--dataset` at a CSV
-with `subject,body,label` columns.
+The training script reads `ml/dataset/sample_emails.csv` and writes `ml/model.joblib`. The bundled dataset is intended for development and demonstration, not production-grade detection accuracy. Validate any model with representative, organization-specific data before relying on its verdicts.
 
-### 4. Run the app
-
-```powershell
-uvicorn app.main:app --reload
-```
-
-Open **http://127.0.0.1:8000** for the dashboard, or **http://127.0.0.1:8000/docs** for the
-interactive API docs.
-
-### 5. Try it out
-
-- Drop a `.eml` file into `./incoming/` — it's auto-triaged within ~10 seconds.
-- Or upload one directly from the dashboard.
-- Or `POST /api/imap/fetch` to pull unseen mail from a configured mailbox.
-
-## Running tests
+## Run tests
 
 ```powershell
 pytest -v
-ruff check .
 ```
 
-## Project structure
+The tests cover parsing, phishing rules, classifier behavior, and API functionality.
 
-```
+## Project layout
+
+```text
 phishing-triage-bot/
-├── app/
-│   ├── ingestion/       # IMAP client, watch-folder poller, email parser
-│   ├── detection/        # Heuristic rules, ML model wrapper, fusion scorer
-│   ├── enrichment/        # VirusTotal / AbuseIPDB clients + cache
-│   ├── storage/           # SQLAlchemy models + session
-│   ├── api/               # FastAPI routes
-│   ├── models/            # Pydantic schemas
-│   ├── templates/, static/ # Dashboard UI
-│   └── main.py            # App entrypoint + background pollers
-├── ml/                    # Training script + starter dataset
-├── tests/                 # pytest suite + .eml fixtures
-├── docs/architecture.md   # Diagram + scoring formula
-└── .github/workflows/ci.yml
+├── app/                      # FastAPI application and analysis modules
+│   ├── enrichment.py         # VirusTotal and AbuseIPDB integrations
+│   ├── gmail_oauth.py        # Gmail OAuth2 authorization
+│   ├── history_store.py      # SQLite investigation history
+│   ├── imap_ingest.py        # IMAP mailbox ingestion
+│   ├── ml_classifier.py      # Model loading and prediction
+│   ├── parser.py             # Email parsing
+│   ├── rules.py              # Heuristic analysis
+│   └── main.py               # Application entry point and API routes
+├── ml/                       # Training script, dataset, and model artifact
+├── sample_emails/            # Example email fixtures
+├── tests/                    # Automated tests
+├── .env.example              # Safe configuration template
+└── requirements.txt          # Python dependencies
 ```
 
-## Why this is more than "calling VirusTotal"
+## Security notes
 
-VirusTotal/AbuseIPDB are reactive reputation *lookups* — they don't understand email headers,
-authentication, spoofing, or content. This project fuses those lookups with header/authentication
-analysis, brand-impersonation heuristics, and a trained text classifier into a single automated
-verdict — the same signal-fusion approach used in real SOC phishing triage and SOAR playbooks.
-
-
+- Never commit `.env`, `gmail_client_secret.json`, or `gmail_token.json`.
+- Treat uploaded emails, extracted URLs, mailbox credentials, and `triage_history.db` as sensitive data.
+- Use API keys with the minimum permissions required and rotate any key that is exposed.
+- This tool supports analyst triage; it does not replace human review or an organization's email-security controls.
 
 ## License
 
-MIT
+This project is licensed under the MIT License.
+
+
+
+
+
+
+
+
+
+
