@@ -148,18 +148,7 @@ authentication, spoofing, or content. This project fuses those lookups with head
 analysis, brand-impersonation heuristics, and a trained text classifier into a single automated
 verdict — the same signal-fusion approach used in real SOC phishing triage and SOAR playbooks.
 
-## Resume bullet points (suggested)
 
-- Built a hybrid rule-based + ML phishing triage pipeline that ingests email via IMAP/upload,
-  parses authentication results (SPF/DKIM/DMARC) and header anomalies, and fuses heuristic,
-  ML, and threat-intel signals into a weighted 0-100 risk score.
-- Integrated VirusTotal and AbuseIPDB APIs with a local caching layer to enrich URL/attachment/
-  sender-IP reputation while respecting free-tier rate limits.
-- Trained and deployed a TF-IDF + Logistic Regression classifier for phishing content detection,
-  with a retraining script for continuous model improvement.
-- Delivered a FastAPI-based analyst dashboard with triage history, drill-down findings, and
-  automated mailbox/watch-folder ingestion; covered core logic with a pytest suite in CI (GitHub
-  Actions).
 
 ## License
 
