@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.venv/
+
+# Local secrets (never commit)
+.env
+.env.local
+.env.*.local
+
+# Allow only safe template
+!.env.example
+
+# Gmail OAuth credentials and tokens (never commit)
+gmail_client_secret.json
+gmail_token.json

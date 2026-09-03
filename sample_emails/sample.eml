@@ -1,0 +1,15 @@
+From: "Demo Sender" <demo.sender@example.com>
+To: analyst@example.com
+Subject: Phase 1 Test Email
+Date: Tue, 25 Aug 2026 10:00:00 +0000
+Message-ID: <phase1-demo@example.com>
+Content-Type: text/plain; charset="utf-8"
+
+Hello Analyst,
+
+Please review these links:
+https://example.com/account
+http://bit.ly/demo-check
+
+Thanks,
+Demo
