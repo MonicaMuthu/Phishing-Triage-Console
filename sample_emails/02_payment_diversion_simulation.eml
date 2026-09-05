@@ -1,0 +1,17 @@
+From: "Northwind Parts Finance" <accounts@northwind-parts.example>
+To: analyst@example.com
+Reply-To: remittance@payment-update.example
+Subject: Updated beneficiary details for invoice INV-2841
+Date: Thu, 04 Sep 2026 09:30:00 +0000
+Message-ID: <payment-diversion-simulation@example.com>
+Authentication-Results: mail.example; spf=pass dkim=pass dmarc=pass
+Content-Type: text/plain; charset="utf-8"
+
+This is a simulated business email compromise scenario for security testing.
+
+Please update the bank beneficiary for invoice INV-2841 before today's payment run.
+The revised remittance details are available at:
+
+https://billing-update.example/invoice/INV-2841
+
+This request is confidential and requires immediate action.

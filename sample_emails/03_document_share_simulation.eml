@@ -1,0 +1,16 @@
+From: "Document Collaboration" <notifications@shared-docs.example>
+To: analyst@example.com
+Subject: You received a protected document
+Date: Thu, 04 Sep 2026 09:45:00 +0000
+Message-ID: <document-share-simulation@example.com>
+Authentication-Results: mail.example; spf=fail dkim=pass dmarc=fail
+Content-Type: text/plain; charset="utf-8"
+
+This is a simulated malicious document delivery scenario for security testing.
+
+A protected payroll document is waiting for your review. Access expires in one hour.
+Open the document now:
+
+https://tinyurl.com/simulated-payroll-document
+
+If you do not open it immediately, the sender will be notified.

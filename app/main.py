@@ -6,6 +6,7 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse
 from dotenv import load_dotenv
 
+from app.ai_analyst import analyze_with_ai, build_ai_analysis, is_ollama_available
 from app.enrichment import enrich_email
 from app.gmail_oauth import get_access_token
 from app.history_store import (
@@ -18,9 +19,7 @@ from app.history_store import (
     update_investigation_status,
 )
 from app.imap_ingest import fetch_unseen
-from app.ml_classifier import is_model_available, predict_phishing_text
 from app.parser import parse_email
-from app.rules import analyze_phishing_risk
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=True)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -750,17 +749,31 @@ def root() -> str:
 
             .explain-table th:first-child,
             .explain-table td:first-child {
-                width: 43%;
+                width: 44%;
             }
 
             .explain-table th:nth-child(2),
             .explain-table td:nth-child(2) {
-                width: 31%;
+                width: 34%;
+                padding-left: 0.45rem;
+                padding-right: 0.45rem;
+                white-space: nowrap;
+                overflow-wrap: normal;
+                vertical-align: top;
+            }
+
+            .explain-table th:nth-child(3),
+            .explain-table td:nth-child(3) {
+                width: 22%;
+                padding-left: 0.35rem;
+                padding-right: 0.35rem;
+                vertical-align: top;
             }
 
             .points {
                 color: var(--blue);
                 font-family: "IBM Plex Mono", Consolas, monospace;
+                font-size: 0.78rem;
                 font-weight: 600;
                 white-space: nowrap;
             }
@@ -1099,7 +1112,7 @@ def root() -> str:
                     <span class="integration-pill" id="pill-vt"><span class="dot"></span>VT Intel</span>
                     <span class="integration-pill" id="pill-abuse"><span class="dot"></span>AbuseIPDB</span>
                     <span class="integration-pill" id="pill-imap"><span class="dot"></span>Mailbox Ingest</span>
-                    <span class="integration-pill" id="pill-ml"><span class="dot"></span>ML Model</span>
+                    <span class="integration-pill" id="pill-ai"><span class="dot"></span>AI Analyst</span>
                 </div>
             </div>
 
@@ -1147,20 +1160,20 @@ def root() -> str:
 
                     <div class="explain-panel">
                         <div class="section-head">
-                            <h2>Classification Evidence</h2>
+                            <h2>AI Analyst Assessment</h2>
                             <small id="rule-count">Awaiting analysis</small>
                         </div>
                         <div class="table-wrap" style="margin-top:0.65rem;">
                             <table class="explain-table">
-                                <thead><tr><th>Evidence</th><th>Detection rule</th><th>Points</th></tr></thead>
+                                <thead><tr><th>Evidence</th><th>Source</th><th>Weight</th></tr></thead>
                                 <tbody id="reasons"><tr><td colspan="3" class="hint">No active case</td></tr></tbody>
                             </table>
                         </div>
-                        <div class="decision-line"><strong>Rule score</strong><strong class="mono" id="rule-score">0/100</strong></div>
-                        <div class="decision-line"><strong>Final decision</strong><strong id="final-decision">Not scored</strong></div>
+                        <div class="decision-line"><strong>AI confidence</strong><strong class="mono" id="rule-score">-</strong></div>
+                        <div class="decision-line"><strong>AI recommendation</strong><strong id="final-decision">Awaiting analysis</strong></div>
                         <div class="source-grid">
-                            <div class="source-item"><div class="k">Rules</div><strong id="source-rules">0/100</strong></div>
-                            <div class="source-item"><div class="k">ML</div><strong id="source-ml">Not enabled</strong></div>
+                            <div class="source-item"><div class="k">Verdict</div><strong id="source-rules">-</strong></div>
+                            <div class="source-item"><div class="k">Action</div><strong id="source-ml">-</strong></div>
                             <div class="source-item"><div class="k">Threat Intel</div><strong id="source-intel">Advisory</strong></div>
                         </div>
                         <div class="section-head" style="margin-top:1rem;"><h2>Automated SOC Response Directives</h2><small>Playbook Actions</small></div>
@@ -1367,8 +1380,10 @@ def root() -> str:
             function updateReasons(analysis, enrichment) {
                 const reasons = Array.isArray(analysis.reasons) ? analysis.reasons : [];
                 const count = Number(analysis.rule_count || reasons.length || 0);
-                const score = Number(analysis.risk_score || 0);
-                const level = (analysis.risk_level || 'low').toUpperCase();
+                const ai = analysis.ai || {};
+                const confidence = Number(ai.confidence || 0);
+                const verdict = (ai.verdict || 'unavailable').toUpperCase();
+                const action = (ai.recommended_action || 'investigate').toUpperCase();
                 const vtRows = Array.isArray(enrichment?.virustotal?.results) ? enrichment.virustotal.results : [];
                 const abuseRows = Array.isArray(enrichment?.abuseipdb?.results) ? enrichment.abuseipdb.results : [];
                 const intelReasons = [
@@ -1388,43 +1403,55 @@ def root() -> str:
                         })),
                 ];
                 const allReasons = [...reasons, ...intelReasons];
-                ruleCount.textContent = count === 0 ? 'No matches' : `${count} ${count === 1 ? 'rule' : 'rules'}`;
-                ruleScore.textContent = `${score}/100`;
-                sourceRules.textContent = `${score}/100`;
+                ruleCount.textContent = ai.enabled ? `${count} AI signal${count === 1 ? '' : 's'}` : 'AI unavailable';
+                ruleScore.textContent = ai.enabled ? `${confidence}%` : '-';
+                sourceRules.textContent = verdict;
                 if (sourceMl) {
-                    if (analysis.ml && analysis.ml.enabled) {
-                        sourceMl.textContent = `${analysis.ml.phishing_percent}% (${(analysis.ml.prediction || '').toUpperCase()})`;
-                    } else {
-                        sourceMl.textContent = 'Not enabled';
-                    }
+                    sourceMl.textContent = action;
                 }
-                finalDecision.textContent = `${level} (${score}/100)`;
+                finalDecision.textContent = ai.enabled ? `${verdict} - ${action}` : 'AI ANALYST UNAVAILABLE';
 
                 if (allReasons.length === 0) {
-                    reasonsNode.innerHTML = '<tr><td colspan="3" class="hint">No suspicious rules were triggered.</td></tr>';
+                    reasonsNode.innerHTML = `<tr><td colspan="3" class="hint">${ai.summary || 'No AI assessment is available.'}</td></tr>`;
                 } else {
                     reasonsNode.innerHTML = allReasons
-                        .map((r) => `<tr><td>${r.detail || 'Suspicious evidence detected'}</td><td class="mono">${r.rule || 'rule'}</td><td class="points">${typeof r.points === 'number' ? '+' : ''}${r.points || 0}</td></tr>`)
+                        .map((r) => {
+                            const source = r.rule === 'ai_summary'
+                                ? 'AI summary'
+                                : r.rule === 'ai_evidence'
+                                    ? 'AI evidence'
+                                    : r.rule === 'virustotal_reputation'
+                                        ? 'VirusTotal'
+                                        : r.rule === 'abuseipdb_reputation'
+                                            ? 'AbuseIPDB'
+                                            : 'AI analyst';
+                            return `<tr><td>${r.detail || 'Assessment evidence unavailable'}</td><td class="mono">${source}</td><td class="points">${r.points ? `+${r.points}` : 'Advisory'}</td></tr>`;
+                        })
                         .join('');
                 }
 
-                const actions = score >= 70
-                    ? [
+                const actionsByRecommendation = {
+                    quarantine: [
                         { tag: 'CRITICAL', text: 'Quarantine reported message from target recipient mailbox immediately' },
                         { tag: 'BLOCK IOC', text: 'Block confirmed malicious URLs & IP indicators on Gateway / Firewall' },
                         { tag: 'USER AUDIT', text: 'Audit end-user click logs & authentication events for compromise' },
                         { tag: 'ESCALATE', text: 'Escalate incident to Tier-2 SOC Incident Response Team' }
-                      ]
-                    : score >= 40
-                        ? [
+                    ],
+                    escalate: [
+                        { tag: 'ESCALATE', text: 'Escalate this message to Tier-2 SOC Incident Response Team' },
+                        { tag: 'PRESERVE', text: 'Preserve the email, headers, and linked indicators as case evidence' }
+                    ],
+                    investigate: [
                             { tag: 'VERIFY', text: 'Verify sender authentication headers (SPF / DKIM / DMARC) & domain age' },
                             { tag: 'INSPECT', text: 'Inspect extracted URL indicators & shortener redirect targets' },
                             { tag: 'ADVISE', text: 'Notify recipient to avoid clicking embedded links or entering credentials' }
-                          ]
-                        : [
+                    ],
+                    allow: [
                             { tag: 'ALLOW', text: 'Benign email — release for normal inbox delivery after analyst check' },
                             { tag: 'MONITOR', text: 'No immediate IOC blocking required — log transaction for metric tracking' }
-                          ];
+                    ],
+                };
+                const actions = actionsByRecommendation[(ai.recommended_action || 'investigate').toLowerCase()] || actionsByRecommendation.investigate;
                 actionsNode.innerHTML = actions.map((act) => `
                     <li class="action-item action-tag-${act.tag.toLowerCase().replace(/ /g, '-')}">
                         <span class="action-badge">${act.tag}</span>
@@ -1740,12 +1767,12 @@ def root() -> str:
                     const pillVt = document.getElementById('pill-vt');
                     const pillAbuse = document.getElementById('pill-abuse');
                     const pillImap = document.getElementById('pill-imap');
-                    const pillMl = document.getElementById('pill-ml');
+                    const pillAi = document.getElementById('pill-ai');
 
                     if (pillVt) pillVt.classList.toggle('active', !!integrations.virustotal_enabled);
                     if (pillAbuse) pillAbuse.classList.toggle('active', !!integrations.abuseipdb_enabled);
                     if (pillImap) pillImap.classList.toggle('active', !!integrations.imap_configured || !!integrations.gmail_oauth_authorized);
-                    if (pillMl) pillMl.classList.toggle('active', !!integrations.ml_model_loaded);
+                    if (pillAi) pillAi.classList.toggle('active', !!integrations.ollama_available);
                 } catch (_e) {}
             }
 
@@ -1767,7 +1794,7 @@ def health() -> dict:
             "abuseipdb_enabled": bool(os.getenv("ABUSEIPDB_API_KEY")),
             "imap_configured": bool(os.getenv("IMAP_HOST") and os.getenv("IMAP_USER")),
             "gmail_oauth_authorized": GMAIL_TOKEN_PATH.exists(),
-            "ml_model_loaded": is_model_available(),
+            "ollama_available": is_ollama_available(),
         },
     }
 
@@ -1830,9 +1857,8 @@ def update_case_status(case_id: int, payload: dict) -> dict:
 
 def process_email(filename: str, raw: bytes) -> int:
     parsed = parse_email(raw)
-    ml_result = predict_phishing_text(parsed.get("subject", ""), parsed.get("body_preview", ""))
-    analysis = analyze_phishing_risk(parsed, ml_result=ml_result)
     enrichment = enrich_email(parsed)
+    analysis = build_ai_analysis(analyze_with_ai(parsed, enrichment))
     return save_investigation(filename, parsed, analysis, enrichment)
 
 
@@ -1846,9 +1872,8 @@ async def upload_eml(file: UploadFile = File(...)) -> dict:
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
     parsed = parse_email(raw)
-    ml_result = predict_phishing_text(parsed.get("subject", ""), parsed.get("body_preview", ""))
-    analysis = analyze_phishing_risk(parsed, ml_result=ml_result)
     enrichment = enrich_email(parsed)
+    analysis = build_ai_analysis(analyze_with_ai(parsed, enrichment))
     case_id = save_investigation(file.filename, parsed, analysis, enrichment)
     return {
         "case_id": case_id,
