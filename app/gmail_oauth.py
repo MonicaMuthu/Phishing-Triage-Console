@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from google.auth.transport.requests import Request
+from google.auth.exceptions import RefreshError
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 
@@ -22,7 +23,12 @@ def get_access_token(client_secret_path: Path, token_path: Path) -> str:
 
     credentials = Credentials.from_authorized_user_file(str(token_path), [GMAIL_SCOPE])
     if credentials.expired and credentials.refresh_token:
-        credentials.refresh(Request())
+        try:
+            credentials.refresh(Request())
+        except RefreshError as exc:
+            raise RuntimeError(
+                "Gmail OAuth token has expired or been revoked. Run: python -m app.gmail_oauth"
+            ) from exc
         token_path.write_text(credentials.to_json(), encoding="utf-8")
 
     if not credentials.valid or not credentials.token:
